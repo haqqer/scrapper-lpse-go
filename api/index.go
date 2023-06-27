@@ -10,6 +10,7 @@ import (
 
 	"github.com/blockloop/scan/v2"
 	"github.com/gocolly/colly"
+	_ "github.com/lib/pq"
 )
 
 type Source struct {
