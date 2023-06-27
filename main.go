@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/blockloop/scan/v2"
@@ -39,7 +40,7 @@ type Scrape struct {
 }
 
 func initSql() *sql.DB {
-	db, err := sql.Open("postgres", "postgres://haqqer:UClV0x2JZhOe@ep-lingering-snowflake-436548.ap-southeast-1.aws.neon.tech/neondb")
+	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		panic(err.Error())
 	}
