@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/blockloop/scan/v2"
+	"github.com/go-redis/redis"
 	"github.com/gocolly/colly"
 	_ "github.com/lib/pq"
 )
@@ -38,24 +40,19 @@ func initSql() *sql.DB {
 	return db
 }
 
-func Handler(res http.ResponseWriter, req *http.Request) {
-	db := initSql()
-	sourceIndex := make(map[string]Source)
-	sources := []Source{}
+func initRedis() *redis.Client {
+	opt, _ := redis.ParseURL(os.Getenv("REDIS_URL"))
+	client := redis.NewClient(opt)
+	return client
+}
 
-	results := []Scrape{}
+func doScrape(rd *redis.Client, sources []Source) {
 	var index int32 = 0
-	rows, err := db.Query(`SELECT "id", "from", "url", "createdAt", "updatedAt" FROM "Sources"`)
-	if err != nil {
-		fmt.Println("error rows")
-		panic(err)
-	}
+	sourceIndex := make(map[string]Source)
+	results := []Scrape{}
 
-	err = scan.Rows(&sources, rows)
-	if err != nil {
-		panic(err)
-	}
-	// Instantiate default collector
+	fmt.Println("Scrapping ... ")
+	rd.Set("status", 1, 0)
 	c := colly.NewCollector(
 		colly.Async(true),
 	)
@@ -91,9 +88,56 @@ func Handler(res http.ResponseWriter, req *http.Request) {
 
 	jsonInBytes, err := json.Marshal(results)
 	if err != nil {
+		panic(err)
+	}
+	rd.Set("lpse", jsonInBytes, 0)
+	// err = ioutil.WriteFile("lpse.json", jsonInBytes, os.ModePerm)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	fmt.Println("Done")
+	rd.Set("status", 0, 0)
+}
+
+func Scrapper(res http.ResponseWriter, req *http.Request) {
+	rd := initRedis()
+	db := initSql()
+	sources := []Source{}
+
+	rows, err := db.Query(`SELECT "id", "from", "url", "createdAt", "updatedAt" FROM "Sources"`)
+	if err != nil {
+		fmt.Println("error rows")
+		panic(err)
+	}
+
+	err = scan.Rows(&sources, rows)
+	if err != nil {
+		panic(err)
+	}
+
+	res.Header().Set("Content-Type", "application/json")
+	status := rd.Get("status").Val()
+	if val, _ := strconv.Atoi(status); val == 1 {
+		result, err := json.Marshal(map[string]string{
+			"status": "processing...",
+		})
+		if err != nil {
+			http.Error(res, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		res.Write(result)
+		return
+	}
+
+	go doScrape(rd, sources)
+
+	jsonInBytes, err := json.Marshal(map[string]string{
+		"status": "ok",
+	})
+	if err != nil {
 		http.Error(res, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	res.Header().Set("Content-Type", "application/json")
+	defer db.Close()
 	res.Write(jsonInBytes)
 }
