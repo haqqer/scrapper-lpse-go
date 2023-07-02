@@ -167,6 +167,7 @@ func Data(res http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
+	port := os.Getenv("PORT")
 	// start := time.Now()
 	// elapsed := time.Since(start)
 
@@ -174,6 +175,6 @@ func main() {
 	http.HandleFunc("/scrapper", Scrapper)
 	http.HandleFunc("/data", Data)
 
-	fmt.Println("server started at localhost:8000")
-	http.ListenAndServe(":8000", nil)
+	fmt.Println("server started at localhost:" + port)
+	http.ListenAndServe(":"+port, nil)
 }
