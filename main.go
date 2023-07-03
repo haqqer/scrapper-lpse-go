@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/blockloop/scan/v2"
@@ -18,15 +21,6 @@ import (
 
 var ctx = context.Background()
 
-type item struct {
-	StoryURL  string
-	Source    string
-	comments  string
-	CrawledAt time.Time
-	Comments  string
-	Title     string
-}
-
 type Source struct {
 	Id        string
 	From      string
@@ -34,15 +28,17 @@ type Source struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
-
-type Scrape struct {
-	Id       int32  `json:"id"`
-	Title    string `json:"title"`
-	Type     string `json:"type"`
-	Hps      string `json:"hps"`
-	LastDate string `json:"lastDate"`
-	From     string `json:"from"`
+type LPSE struct {
+	Id         int32  `json:"id"`
+	Owner      string `json:"owner"`
+	Type       string `json:"type"`
+	Hps        int64  `json:"hps"`
+	DeadlineAt string `json:"deadlineAt"`
+	Title      string `json:"title"`
+	Url        string `json:"url"`
 }
+
+var rgx = regexp.MustCompile("[^0-9]+")
 
 func initSql() *sql.DB {
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
@@ -58,10 +54,23 @@ func initRedis() *redis.Client {
 	return client
 }
 
-func doScrape(rd *redis.Client, sources []Source) {
+func doScrape(rd *redis.Client, db *sql.DB) {
 	var index int32 = 0
 	sourceIndex := make(map[string]Source)
-	results := []Scrape{}
+	results := []LPSE{}
+
+	sources := []Source{}
+
+	rows, err := db.Query(`SELECT "id", "from", "url", "createdAt", "updatedAt" FROM "Sources"`)
+	if err != nil {
+		fmt.Println("error rows")
+		panic(err)
+	}
+
+	err = scan.Rows(&sources, rows)
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Println("Scrapping ... ")
 	rd.Set("status", 1, 0)
@@ -74,26 +83,40 @@ func doScrape(rd *redis.Client, sources []Source) {
 	}
 	c.OnHTML(".Jasa_Konsultansi_Badan_Usaha_Non_Konstruksi", func(e *colly.HTMLElement) {
 		index += 1
-		temp := Scrape{}
+		temp := LPSE{}
 		temp.Id = index
 		temp.Title = e.DOM.Children().Find("a").Text()
-		temp.Hps = e.ChildText("td.table-hps")
+		hpsString := e.ChildText("td.table-hps")
+		splited := strings.Split(hpsString, ",")
+		hpsConverted := rgx.ReplaceAllString(splited[0], "")
+		hpsNumber, err := strconv.ParseInt(hpsConverted, 10, 64)
+		if err != nil {
+			fmt.Println("error parsing, ", err.Error())
+		}
+		temp.Hps = hpsNumber
 		temp.Type = "Jasa Konsultasi Badan Usaha non Konstruksi"
-		temp.LastDate = e.ChildText("td.center")
-		sourceFrom := sourceIndex[e.Request.URL.String()]
-		temp.From = sourceFrom.From
+		temp.Url = fmt.Sprintf("%s%s", e.Request.URL.Hostname(), e.ChildAttr("a", "href"))
+		temp.DeadlineAt = e.ChildText("td.center")
+		temp.Owner = sourceIndex[e.Request.URL.String()].From
 		results = append(results, temp)
 	})
 	c.OnHTML(".Jasa_Lainnya", func(e *colly.HTMLElement) {
 		index += 1
-		temp := Scrape{}
+		temp := LPSE{}
 		temp.Id = index
 		temp.Title = e.DOM.Children().Find("a").Text()
-		temp.Hps = e.ChildText("td.table-hps")
+		hpsString := e.ChildText("td.table-hps")
+		splited := strings.Split(hpsString, ",")
+		hpsConverted := rgx.ReplaceAllString(splited[0], "")
+		hpsNumber, err := strconv.ParseInt(hpsConverted, 10, 64)
+		if err != nil {
+			fmt.Println("error parsing, ", err.Error())
+		}
+		temp.Hps = hpsNumber
 		temp.Type = "Jasa Lainnya"
-		temp.LastDate = e.ChildText("td.center")
-		sourceFrom := sourceIndex[e.Request.URL.String()]
-		temp.From = sourceFrom.From
+		temp.Url = fmt.Sprintf("%s%s", e.Request.URL.Hostname(), e.ChildAttr("a", "href"))
+		temp.DeadlineAt = e.ChildText("td.center")
+		temp.Owner = sourceIndex[e.Request.URL.String()].From
 		results = append(results, temp)
 	})
 	c.Wait()
@@ -107,25 +130,14 @@ func doScrape(rd *redis.Client, sources []Source) {
 	// if err != nil {
 	// 	panic(err)
 	// }
-	fmt.Println("Done")
 	rd.Set("status", 0, 0)
+	fmt.Println("Done")
 }
 
 func Scrapper(res http.ResponseWriter, req *http.Request) {
+	start := time.Now()
 	rd := initRedis()
 	db := initSql()
-	sources := []Source{}
-
-	rows, err := db.Query(`SELECT "id", "from", "url", "createdAt", "updatedAt" FROM "Sources"`)
-	if err != nil {
-		fmt.Println("error rows")
-		panic(err)
-	}
-
-	err = scan.Rows(&sources, rows)
-	if err != nil {
-		panic(err)
-	}
 
 	res.Header().Set("Content-Type", "application/json")
 	status := rd.Get("status").Val()
@@ -141,7 +153,7 @@ func Scrapper(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	go doScrape(rd, sources)
+	go doScrape(rd, db)
 
 	jsonInBytes, err := json.Marshal(map[string]string{
 		"status": "ok",
@@ -150,6 +162,8 @@ func Scrapper(res http.ResponseWriter, req *http.Request) {
 		http.Error(res, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	end := time.Since(start)
+	log.Printf("Binomial took %s", end)
 	res.Write(jsonInBytes)
 }
 
