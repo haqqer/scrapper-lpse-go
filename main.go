@@ -150,7 +150,6 @@ func Scrapper(res http.ResponseWriter, req *http.Request) {
 		http.Error(res, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
 	res.Write(jsonInBytes)
 }
 
