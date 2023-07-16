@@ -95,7 +95,7 @@ func doScrape(rd *redis.Client, db *sql.DB) {
 		}
 		temp.Hps = hpsNumber
 		temp.Type = "Jasa Konsultasi Badan Usaha non Konstruksi"
-		temp.Url = fmt.Sprintf("%s%s", e.Request.URL.Hostname(), e.ChildAttr("a", "href"))
+		temp.Url = fmt.Sprintf("%s://%s%s", e.Request.URL.Scheme, e.Request.URL.Host, e.ChildAttr("a", "href"))
 		temp.DeadlineAt = e.ChildText("td.center")
 		temp.Owner = sourceIndex[e.Request.URL.String()].From
 		results = append(results, temp)
@@ -114,7 +114,7 @@ func doScrape(rd *redis.Client, db *sql.DB) {
 		}
 		temp.Hps = hpsNumber
 		temp.Type = "Jasa Lainnya"
-		temp.Url = fmt.Sprintf("%s%s", e.Request.URL.Hostname(), e.ChildAttr("a", "href"))
+		temp.Url = fmt.Sprintf("%s://%s%s", e.Request.URL.Scheme, e.Request.URL.Host, e.ChildAttr("a", "href"))
 		temp.DeadlineAt = e.ChildText("td.center")
 		temp.Owner = sourceIndex[e.Request.URL.String()].From
 		results = append(results, temp)
