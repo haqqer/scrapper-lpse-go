@@ -39,6 +39,12 @@ type LPSE struct {
 }
 
 var rgx = regexp.MustCompile("[^0-9]+")
+var rgxCusMonth = regexp.MustCompile(`([A-Za-z])\w+`)
+var specialMonths = map[string]string{
+	"Agustus":  "Augustus",
+	"Oktober":  "October",
+	"Desember": "December",
+}
 
 func initSql() *sql.DB {
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
@@ -52,6 +58,14 @@ func initRedis() *redis.Client {
 	opt, _ := redis.ParseURL(os.Getenv("REDIS_URL"))
 	client := redis.NewClient(opt)
 	return client
+}
+
+func parseSpcMonth(srcDate string) string {
+	month := rgxCusMonth.FindString(srcDate)
+	if specialMonths[month] == "" {
+		return srcDate
+	}
+	return strings.Replace(srcDate, month, specialMonths[month], 1)
 }
 
 func doScrape(rd *redis.Client, db *sql.DB) {
@@ -96,7 +110,7 @@ func doScrape(rd *redis.Client, db *sql.DB) {
 		temp.Hps = hpsNumber
 		temp.Type = "Jasa Konsultasi Badan Usaha non Konstruksi"
 		temp.Url = fmt.Sprintf("%s://%s%s", e.Request.URL.Scheme, e.Request.URL.Host, e.ChildAttr("a", "href"))
-		temp.DeadlineAt = e.ChildText("td.center")
+		temp.DeadlineAt = parseSpcMonth(e.ChildText("td.center"))
 		temp.Owner = sourceIndex[e.Request.URL.String()].From
 		results = append(results, temp)
 	})
@@ -115,7 +129,7 @@ func doScrape(rd *redis.Client, db *sql.DB) {
 		temp.Hps = hpsNumber
 		temp.Type = "Jasa Lainnya"
 		temp.Url = fmt.Sprintf("%s://%s%s", e.Request.URL.Scheme, e.Request.URL.Host, e.ChildAttr("a", "href"))
-		temp.DeadlineAt = e.ChildText("td.center")
+		temp.DeadlineAt = parseSpcMonth(e.ChildText("td.center"))
 		temp.Owner = sourceIndex[e.Request.URL.String()].From
 		results = append(results, temp)
 	})
