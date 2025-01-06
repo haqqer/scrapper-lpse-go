@@ -1,0 +1,12 @@
+services:
+  scraper-lpse:
+    image: <image>:latest
+    container_name: scraper-lpse-service
+    restart: unless-stopped
+    environment:
+      - "DATABASE_URL="
+      - "REDIS_URL="
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.scraper-lpse.rule=Host(`scraper-lpse-api.localhost`)"
+      - "traefik.http.routers.scraper-lpse.entrypoints=web"
