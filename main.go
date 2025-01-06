@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -19,7 +18,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var ctx = context.Background()
+var port = "8080"
 
 type Source struct {
 	Id        string
@@ -194,7 +193,9 @@ func Data(res http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	port := os.Getenv("PORT")
+	if os.Getenv("PORT") != "" {
+		port = os.Getenv("PORT")
+	}
 	// start := time.Now()
 	// elapsed := time.Since(start)
 
@@ -203,5 +204,5 @@ func main() {
 	http.HandleFunc("/data", Data)
 
 	fmt.Println("server started at localhost:" + port)
-	http.ListenAndServe(":"+port, nil)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

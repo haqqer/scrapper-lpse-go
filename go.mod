@@ -1,6 +1,6 @@
 module haqqer/scrapper
 
-go 1.19
+go 1.22
 
 require (
 	github.com/blockloop/scan/v2 v2.0.1
